@@ -186,4 +186,4 @@ client.once('ready', async () => {
     }, 6 * 60 * 60 * 1000);
 });
 
-client.login(TOKEN);
+client.login(process.env.DISCORD_BOT_TOKEN);
