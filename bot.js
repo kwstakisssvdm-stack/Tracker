@@ -2,11 +2,24 @@ const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
+const express = require('express');
+
+// -------------------- WEB SERVER (για Render) --------------------
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get('/', (req, res) => {
+    res.send('RobloxLx Tracker Bot is running!');
+});
+
+app.listen(PORT, () => {
+    console.log(`Web server is running on port ${PORT}`);
+});
 
 // -------------------- CONFIGURATION --------------------
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CHANNEL_ID = '151588746147794286';
-const PING_ID = '1515081507918581942';  // Το ID που έδωσες (ρόλος ή χρήστης)
+const PING_ID = '1515081507918581942';
 const VERSION_STORE_FILE = path.join(__dirname, 'last_version.json');
 
 // -------------------- HELPER FUNCTIONS --------------------
@@ -99,12 +112,8 @@ function createDownloadButton(clientUpload) {
     return new ActionRowBuilder().addComponents(button);
 }
 
-// Ελέγχει αν το PING_ID είναι ρόλος ή χρήστης και επιστρέφει το σωστό format
 function getPingFormat() {
-    // Αν το ID είναι 18 ψηφίων, πιθανότατα είναι ρόλος
-    // Η Discord.js κάνει αυτόματα resolve, αλλά εμείς βάζουμε και τα δύο formats
-    return `<@&${PING_ID}>`;  // Για ρόλο
-    // return `<@${PING_ID}>`;  // Για χρήστη (αν χρειαστεί, ξεσχολίασε αυτό και σβήστο το πάνω)
+    return `<@&${PING_ID}>`;
 }
 
 async function checkForUpdates(client) {
@@ -147,7 +156,7 @@ async function checkForUpdates(client) {
 
         const embed = createVersionEmbed(currentVersionData, updateMessage, false);
         const buttonRow = createDownloadButton(currentVersionData.clientUpload);
-        const channel = await client.channels.fetch(1515087460147794051).catch(() => null);
+        const channel = await client.channels.fetch(CHANNEL_ID).catch(() => null);
         if (channel) {
             await channel.send({ content: getPingFormat(), embeds: [embed], components: [buttonRow] });
         }
@@ -177,4 +186,4 @@ client.once('ready', async () => {
     }, 6 * 60 * 60 * 1000);
 });
 
-client.login(process.env.DISCORD_BOT_TOKEN);
+client.login(TOKEN);
