@@ -151,7 +151,7 @@ const client = new Client({
 
 client.once('ready', async () => {
     console.log(`Logged in as ${client.user.tag}`);
-    console.log(`Bot will post RobloxLx version updates to channel ID: ${CHANNEL_ID}`);
+    console.log(`Bot will post RobloxLx version updates to channel ID: ${1515087460147794051}`);
 
     // First check immediately
     await checkForUpdates(client);
