@@ -162,4 +162,4 @@ client.once('ready', async () => {
     }, 6 * 60 * 60 * 1000);
 });
 
-client.login(MTUxNTQyMDcwNzYxNjU5MjAyMg.G7wV8G.AEmhpbJmNlB7sakU7PeDs0dSxEIj1qJW-I-JxA);
+client.login(process.env.DISCORD_BOT_TOKEN);
