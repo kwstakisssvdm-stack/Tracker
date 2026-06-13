@@ -1,51 +1,58 @@
-// roblox-tracker-bot.js
-// A Discord bot that tracks RobloxLx client versions, announces updates,
-// and provides a download button linking to rdd.weao.gg
-
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 
 // -------------------- CONFIGURATION --------------------
-const TOKEN = process.env.DISCORD_BOT_TOKEN;  // Set your bot token in environment variables
-const CHANNEL_ID = 'YOUR_CHANNEL_ID_HERE';    // Channel where updates will be posted
+const TOKEN = process.env.DISCORD_BOT_TOKEN;
+const CHANNEL_ID = '1515087466147794200';  // Το channel ID σου
 const VERSION_STORE_FILE = path.join(__dirname, 'last_version.json');
-const ROBLOX_VERSION_API = 'https://clientsettingscdn.roblox.com/v2/client-version/RobloxApp';
-const DOWNLOAD_URL = 'https://rdd.weao.gg';   // Link for the download button
+const DOWNLOAD_URL = 'https://rdd.weao.gg';
 
 // -------------------- HELPER FUNCTIONS --------------------
-// Fetch current Roblox client version from official API
 async function fetchRobloxVersion() {
     try {
-        const response = await axios.get(ROBLOX_VERSION_API);
+        // Δοκιμάζουμε διαφορετικό API endpoint
+        const response = await axios.get('https://clientsettingscdn.roblox.com/v1/client-version', {
+            params: {
+                binaryType: 'Windows',
+                channel: 'LIVE'
+            },
+            timeout: 10000
+        });
+        
         const data = response.data;
         return {
-            version: data.version,                  // e.g., "0.725.0.7251138"
-            clientUpload: data.clientVersionUpload, // e.g., "version-76173e47a79145c7"
-            bootstrap: generateBootstrap(data.version) // derived bootstrap info
+            version: data.clientVersionUpload || data.version || 'Unknown',
+            clientUpload: data.clientVersionUpload || 'Unknown',
+            bootstrap: generateBootstrap(data.version || data.clientVersionUpload)
         };
     } catch (error) {
         console.error('Failed to fetch Roblox version:', error.message);
-        return null;
+        // Δοκιμάζουμε εναλλακτικό endpoint
+        try {
+            const response2 = await axios.get('https://setup.rbxcdn.com/version', { timeout: 10000 });
+            return {
+                version: response2.data.trim(),
+                clientUpload: `version-${response2.data.trim()}`,
+                bootstrap: generateBootstrap(response2.data.trim())
+            };
+        } catch (error2) {
+            console.error('Alternative endpoint also failed:', error2.message);
+            return null;
+        }
     }
 }
 
-// Generate a Bootstrap string similar to the one shown in the image
-// Example: "1, 6, 0, 7251138" based on the version number
 function generateBootstrap(version) {
-    const parts = version.split('.');
+    if (!version) return "1, 6, 0, 7251138";
+    const parts = version.toString().split('.');
     if (parts.length >= 4) {
-        const major = parts[0];
-        const minor = parts[1];
-        const patch = parts[2];
-        const build = parts[3];
-        return `${major}, ${minor}, ${patch}, ${build}`;
+        return `${parts[0]}, ${parts[1]}, ${parts[2]}, ${parts[3]}`;
     }
-    return "1, 6, 0, 7251138"; // fallback
+    return "1, 6, 0, 7251138";
 }
 
-// Load previously stored version data
 function loadStoredVersion() {
     if (fs.existsSync(VERSION_STORE_FILE)) {
         const data = fs.readFileSync(VERSION_STORE_FILE, 'utf-8');
@@ -54,13 +61,11 @@ function loadStoredVersion() {
     return { version: null, lastUpdateTimestamp: null, updateCount: 0 };
 }
 
-// Save current version and metadata
 function saveVersionData(version, updateCount, lastUpdateTimestamp) {
     const data = { version, updateCount, lastUpdateTimestamp };
     fs.writeFileSync(VERSION_STORE_FILE, JSON.stringify(data, null, 2));
 }
 
-// Create an embed message for the current version, with an optional custom message
 function createVersionEmbed(versionData, updateMessage = null, isInitial = false) {
     const now = new Date();
     const formattedDate = `${now.getMonth()+1}/${now.getDate()}/${now.getFullYear()} ${now.getHours()}:${now.getMinutes().toString().padStart(2,'0')} ${now.getHours() >= 12 ? 'pm' : 'am'}`;
@@ -69,14 +74,13 @@ function createVersionEmbed(versionData, updateMessage = null, isInitial = false
         .setTitle('🚀 RobloxLx Tracker')
         .setColor(0x00AE86)
         .addFields(
-            { name: 'Version', value: versionData.version, inline: true },
-            { name: 'Client Upload', value: versionData.clientUpload, inline: true },
-            { name: 'Bootstrap', value: versionData.bootstrap, inline: true }
+            { name: 'Version', value: versionData.version || 'N/A', inline: true },
+            { name: 'Client Upload', value: versionData.clientUpload || 'N/A', inline: true },
+            { name: 'Bootstrap', value: versionData.bootstrap || 'N/A', inline: true }
         )
         .setFooter({ text: `EΦAPM • ${formattedDate}` })
         .setTimestamp();
 
-    // Add update announcement message if provided
     if (updateMessage) {
         embed.setDescription(updateMessage);
     } else if (isInitial) {
@@ -86,7 +90,6 @@ function createVersionEmbed(versionData, updateMessage = null, isInitial = false
     return embed;
 }
 
-// Create a button row with a download link
 function createDownloadButton() {
     const button = new ButtonBuilder()
         .setLabel('📥 Download Here')
@@ -95,37 +98,36 @@ function createDownloadButton() {
     return new ActionRowBuilder().addComponents(button);
 }
 
-// Main update logic: check for new version and post to Discord if changed
 async function checkForUpdates(client) {
     const currentVersionData = await fetchRobloxVersion();
-    if (!currentVersionData) return;
+    if (!currentVersionData) {
+        console.log('Could not fetch version data, will retry later');
+        return;
+    }
 
     const stored = loadStoredVersion();
     const oldVersion = stored.version;
 
-    // If version has changed (or first run)
     if (currentVersionData.version !== oldVersion) {
         let updateMessage = '';
-        let isUpdate = false;
         let newUpdateCount = stored.updateCount;
         const nowTimestamp = Date.now();
 
         if (oldVersion === null) {
-            // First run – just post current info without "update" message
             const embed = createVersionEmbed(currentVersionData, null, true);
             const buttonRow = createDownloadButton();
-            await client.channels.cache.get(CHANNEL_ID).send({ embeds: [embed], components: [buttonRow] });
+            const channel = await client.channels.fetch(1515087460147794051).catch(() => null);
+            if (channel) {
+                await channel.send({ embeds: [embed], components: [buttonRow] });
+            }
             saveVersionData(currentVersionData.version, 0, nowTimestamp);
             console.log(`Initial post: version ${currentVersionData.version}`);
             return;
         }
 
-        // It's an actual update
-        isUpdate = true;
         newUpdateCount++;
         const daysSinceLastUpdate = stored.lastUpdateTimestamp ? (nowTimestamp - stored.lastUpdateTimestamp) / (1000 * 3600 * 24) : 0;
 
-        // Custom update message based on time elapsed (for "after months" requirement)
         if (daysSinceLastUpdate > 60) {
             updateMessage = `🔄 **Major update after several months!**\nRobloxLx has been updated from **${oldVersion}** → **${currentVersionData.version}**.\nGet the latest client now.`;
         } else if (daysSinceLastUpdate > 30) {
@@ -136,7 +138,10 @@ async function checkForUpdates(client) {
 
         const embed = createVersionEmbed(currentVersionData, updateMessage, false);
         const buttonRow = createDownloadButton();
-        await client.channels.cache.get(CHANNEL_ID).send({ embeds: [embed], components: [buttonRow] });
+        const channel = await client.channels.fetch(CHANNEL_ID).catch(() => null);
+        if (channel) {
+            await channel.send({ embeds: [embed], components: [buttonRow] });
+        }
         saveVersionData(currentVersionData.version, newUpdateCount, nowTimestamp);
         console.log(`Update posted: ${oldVersion} -> ${currentVersionData.version}`);
     } else {
@@ -146,17 +151,19 @@ async function checkForUpdates(client) {
 
 // -------------------- DISCORD BOT INITIALIZATION --------------------
 const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages]
 });
 
 client.once('ready', async () => {
     console.log(`Logged in as ${client.user.tag}`);
-    console.log(`Bot will post RobloxLx version updates to channel ID: ${1515087460147794051}`);
+    console.log(`Bot will post RobloxLx version updates to channel ID: ${CHANNEL_ID}`);
 
-    // First check immediately
-    await checkForUpdates(client);
+    // Μικρή καθυστέρηση πριν το πρώτο check
+    setTimeout(async () => {
+        await checkForUpdates(client);
+    }, 5000);
 
-    // Then check every 6 hours (adjust as needed)
+    // Check every 6 hours
     setInterval(async () => {
         await checkForUpdates(client);
     }, 6 * 60 * 60 * 1000);
