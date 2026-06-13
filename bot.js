@@ -5,14 +5,13 @@ const path = require('path');
 
 // -------------------- CONFIGURATION --------------------
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
-const CHANNEL_ID = '1515087466147794200';  // Το channel ID σου
+const CHANNEL_ID = '151588746147794286';
+const PING_ID = '1515081507918581942';  // Το ID που έδωσες (ρόλος ή χρήστης)
 const VERSION_STORE_FILE = path.join(__dirname, 'last_version.json');
-const DOWNLOAD_URL = 'https://rdd.weao.gg';
 
 // -------------------- HELPER FUNCTIONS --------------------
 async function fetchRobloxVersion() {
     try {
-        // Δοκιμάζουμε διαφορετικό API endpoint
         const response = await axios.get('https://clientsettingscdn.roblox.com/v1/client-version', {
             params: {
                 binaryType: 'Windows',
@@ -29,13 +28,13 @@ async function fetchRobloxVersion() {
         };
     } catch (error) {
         console.error('Failed to fetch Roblox version:', error.message);
-        // Δοκιμάζουμε εναλλακτικό endpoint
         try {
             const response2 = await axios.get('https://setup.rbxcdn.com/version', { timeout: 10000 });
+            const versionFromCDN = response2.data.trim();
             return {
-                version: response2.data.trim(),
-                clientUpload: `version-${response2.data.trim()}`,
-                bootstrap: generateBootstrap(response2.data.trim())
+                version: versionFromCDN,
+                clientUpload: `version-${versionFromCDN}`,
+                bootstrap: generateBootstrap(versionFromCDN)
             };
         } catch (error2) {
             console.error('Alternative endpoint also failed:', error2.message);
@@ -90,12 +89,22 @@ function createVersionEmbed(versionData, updateMessage = null, isInitial = false
     return embed;
 }
 
-function createDownloadButton() {
+function createDownloadButton(clientUpload) {
+    const downloadUrl = `https://rdd.weao.gg/?channel=LIVE&binaryType=WindowsPlayer&version=${clientUpload}&includeLauncher=true&parallelDownload=true`;
+    
     const button = new ButtonBuilder()
         .setLabel('📥 Download Here')
         .setStyle(ButtonStyle.Link)
-        .setURL(DOWNLOAD_URL);
+        .setURL(downloadUrl);
     return new ActionRowBuilder().addComponents(button);
+}
+
+// Ελέγχει αν το PING_ID είναι ρόλος ή χρήστης και επιστρέφει το σωστό format
+function getPingFormat() {
+    // Αν το ID είναι 18 ψηφίων, πιθανότατα είναι ρόλος
+    // Η Discord.js κάνει αυτόματα resolve, αλλά εμείς βάζουμε και τα δύο formats
+    return `<@&${PING_ID}>`;  // Για ρόλο
+    // return `<@${PING_ID}>`;  // Για χρήστη (αν χρειαστεί, ξεσχολίασε αυτό και σβήστο το πάνω)
 }
 
 async function checkForUpdates(client) {
@@ -115,10 +124,10 @@ async function checkForUpdates(client) {
 
         if (oldVersion === null) {
             const embed = createVersionEmbed(currentVersionData, null, true);
-            const buttonRow = createDownloadButton();
-            const channel = await client.channels.fetch(1515087460147794051).catch(() => null);
+            const buttonRow = createDownloadButton(currentVersionData.clientUpload);
+            const channel = await client.channels.fetch(CHANNEL_ID).catch(() => null);
             if (channel) {
-                await channel.send({ embeds: [embed], components: [buttonRow] });
+                await channel.send({ content: getPingFormat(), embeds: [embed], components: [buttonRow] });
             }
             saveVersionData(currentVersionData.version, 0, nowTimestamp);
             console.log(`Initial post: version ${currentVersionData.version}`);
@@ -137,10 +146,10 @@ async function checkForUpdates(client) {
         }
 
         const embed = createVersionEmbed(currentVersionData, updateMessage, false);
-        const buttonRow = createDownloadButton();
-        const channel = await client.channels.fetch(CHANNEL_ID).catch(() => null);
+        const buttonRow = createDownloadButton(currentVersionData.clientUpload);
+        const channel = await client.channels.fetch(1515087460147794051).catch(() => null);
         if (channel) {
-            await channel.send({ embeds: [embed], components: [buttonRow] });
+            await channel.send({ content: getPingFormat(), embeds: [embed], components: [buttonRow] });
         }
         saveVersionData(currentVersionData.version, newUpdateCount, nowTimestamp);
         console.log(`Update posted: ${oldVersion} -> ${currentVersionData.version}`);
@@ -157,13 +166,12 @@ const client = new Client({
 client.once('ready', async () => {
     console.log(`Logged in as ${client.user.tag}`);
     console.log(`Bot will post RobloxLx version updates to channel ID: ${CHANNEL_ID}`);
+    console.log(`Ping ID set to: ${PING_ID}`);
 
-    // Μικρή καθυστέρηση πριν το πρώτο check
     setTimeout(async () => {
         await checkForUpdates(client);
     }, 5000);
 
-    // Check every 6 hours
     setInterval(async () => {
         await checkForUpdates(client);
     }, 6 * 60 * 60 * 1000);
